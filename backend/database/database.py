@@ -1,13 +1,16 @@
-from sqlachemy import create_engine
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from app.core.config import settings
+
+from core.config import settings
+
 
 engine = create_engine(
-    settings.DATEBASE_URL
+    settings.DATABASE_URL
 )
+
 
 SessionLocal = sessionmaker(
     autocommit=False,
-    expire_on_commit=False,
+    autoflush=False,
     bind=engine
 )
