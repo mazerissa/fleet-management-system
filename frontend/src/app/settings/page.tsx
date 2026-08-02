@@ -1,8 +1,8 @@
-export default function Vehicles(){
+export default function Settings(){
 
 return (
 <h1 className="text-3xl font-bold">
-Vehicles
+Settings
 </h1>
 )
 
