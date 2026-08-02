@@ -1,32 +1,31 @@
-"use client"
+"use client";
 
-import {useEffect, useState} from "react";
+import { useEffect, useState } from "react";
 import api from "@/lib/api";
 
 
-export default function Test(){
+export default function TestPage(){
 
-const [message,setMessage]=useState("");
+    const [message, setMessage] = useState("");
+
+    useEffect(() => {
+
+        api.get("/")
+        .then((response)=>{
+            setMessage(response.data.message);
+        })
+        .catch(()=>{
+            setMessage("Backend connection failed");
+        });
+
+    },[]);
 
 
-useEffect(()=>{
-
-api.get("/")
-.then(res=>{
-setMessage(res.data.message)
-})
-
-},[])
-
-
-return (
-
-<div>
-
-<h1>{message}</h1>
-
-</div>
-
-)
-
+    return (
+        <main>
+            <h1>
+                {message}
+            </h1>
+        </main>
+    );
 }
