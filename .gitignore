@@ -19,7 +19,7 @@ node_modules/
 /coverage/
 
 # next.js
-/.next/
+.next/
 /out/
 next-env.d.ts
 
@@ -51,4 +51,3 @@ yarn-error.log*
 
 .env
 .env.local
-.next\
