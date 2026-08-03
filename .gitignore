@@ -26,6 +26,9 @@ next-env.d.ts
 # production
 /build/
 
+# local databases
+*.db
+
 # misc
 .DS_Store
 *.pem
