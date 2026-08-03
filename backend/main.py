@@ -1,11 +1,26 @@
 from fastapi import FastAPI
-from database.database import engine
+from fastapi.middleware.cors import CORSMiddleware
 
+from .database.database import engine
+from .database.models import Base
+from .vehicles.routes import router as vehicles_router
+from .employees.routes import router as employees_router
 
 app = FastAPI(
     title="Fleet Management API",
     version="1.0.0"
 )
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+Base.metadata.create_all(bind=engine)
 
 
 @app.get("/")
@@ -15,20 +30,5 @@ def root():
     }
 
 
-@app.get("/database")
-def database_test():
-
-    try:
-        connection = engine.connect()
-        connection.close()
-
-        return {
-            "database": "connected"
-        }
-
-    except Exception as e:
-
-        return {
-            "database": "failed",
-            "error": str(e)
-        }
+app.include_router(vehicles_router)
+app.include_router(employees_router)
