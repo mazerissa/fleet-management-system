@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from ..auth import get_current_user, get_optional_current_user
 from ..database.database import get_db
 from ..database.models import Employee
 
@@ -33,10 +34,25 @@ def list_employees(db: Session = Depends(get_db)):
 
 
 @router.post("/", response_model=EmployeeRead, status_code=status.HTTP_201_CREATED)
-def create_employee(payload: EmployeeCreate, db: Session = Depends(get_db)):
+def create_employee(
+    payload: EmployeeCreate,
+    db: Session = Depends(get_db),
+    current_user: Employee | None = Depends(get_optional_current_user),
+):
     existing = db.query(Employee).filter(Employee.email == payload.email).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already exists")
+
+    admin_exists = db.query(Employee).filter(Employee.role == "admin").first()
+    if admin_exists:
+        if not current_user or current_user.role != "admin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
+    else:
+        if payload.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="The first account created must be an admin",
+            )
 
     employee = Employee(
         name=payload.name,
@@ -48,6 +64,11 @@ def create_employee(payload: EmployeeCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(employee)
     return employee
+
+
+@router.get("/me", response_model=EmployeeRead)
+def read_current_user(current_user: Employee = Depends(get_current_user)):
+    return current_user
 
 
 @router.get("/{employee_id}", response_model=EmployeeRead)
