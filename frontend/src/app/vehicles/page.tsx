@@ -1,56 +1,68 @@
+
 "use client";
 
-import { useEffect, useState } from "react";
-import api from "@/lib/api";
+import { useMemo } from "react";
+import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
+import useAxios from "@/hooks/useAxios";
+import { isAuthenticated } from "@/lib/auth";
 import DataTable from "@/components/DataTable";
 
-interface Vehicle {
+interface VehicleSummary {
   id: number;
-  make: string;
+  brand: string;
   model: string;
   year: number;
   license_plate: string;
   status: string;
-  assigned_to: string | null;
+  assigned_employee_id: number | null;
 }
 
 export default function Vehicles() {
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const api = useAxios();
+  const authenticated = isAuthenticated();
 
-  useEffect(() => {
-    api
-      .get<Vehicle[]>('/vehicles')
-      .then((response) => {
-        setVehicles(response.data);
-        setLoading(false);
-      })
-      .catch(() => {
-        setError('Unable to load vehicles.');
-        setLoading(false);
-      });
-  }, []);
+  const vehiclesQuery = useQuery({
+    queryKey: ["vehicles"],
+    queryFn: async () => {
+      const response = await api.get<VehicleSummary[]>("/vehicles");
+      return response.data;
+    },
+    enabled: authenticated,
+  });
 
-  const headers = [
-    'ID',
-    'Make',
-    'Model',
-    'Year',
-    'License',
-    'Status',
-    'Assigned To',
-  ];
+  const rows = useMemo(
+    () =>
+      vehiclesQuery.data?.map((vehicle) => [
+        String(vehicle.id),
+        vehicle.brand,
+        vehicle.model,
+        String(vehicle.year),
+        vehicle.license_plate,
+        vehicle.status,
+        vehicle.assigned_employee_id ? String(vehicle.assigned_employee_id) : "-",
+      ]) ?? [],
+    [vehiclesQuery.data],
+  );
 
-  const rows = vehicles.map((vehicle) => [
-    String(vehicle.id),
-    vehicle.make,
-    vehicle.model,
-    String(vehicle.year),
-    vehicle.license_plate,
-    vehicle.status,
-    vehicle.assigned_to || '-',
-  ]);
+  const headers = ["ID", "Brand", "Model", "Year", "License", "Status", "Assigned"];
+
+  if (!authenticated) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Vehicles</h1>
+          <p className="text-slate-500 mt-2">Login to inspect vehicle assignments and status.</p>
+        </div>
+        <div className="rounded-3xl border bg-white p-6 shadow-sm">
+          <p className="text-slate-700">Please sign in to access the fleet vehicle list.</p>
+          <Link href="/login" className="mt-4 inline-flex rounded-lg bg-slate-900 px-4 py-2 text-white hover:bg-slate-800">
+            Sign in
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -59,10 +71,10 @@ export default function Vehicles() {
         <p className="text-slate-500 mt-2">Manage fleet vehicles and view assignment status.</p>
       </div>
 
-      {loading ? (
+      {vehiclesQuery.isLoading ? (
         <p>Loading vehicles...</p>
-      ) : error ? (
-        <p className="text-red-600">{error}</p>
+      ) : vehiclesQuery.isError ? (
+        <p className="text-red-600">Unable to load vehicles.</p>
       ) : (
         <div className="bg-white rounded-2xl p-6 border shadow-sm">
           <DataTable headers={headers} rows={rows} />

@@ -1,125 +1,125 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import api from "@/lib/api";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
+import useAxios from "@/hooks/useAxios";
 import DataTable from "@/components/DataTable";
+import { isAuthenticated } from "@/lib/auth";
 
-interface Employee {
+interface EmployeeSummary {
   id: number;
-  name: string;
+  first_name: string;
+  last_name: string;
   email: string;
   role: string;
-  active: boolean;
+  is_active: boolean;
+}
+
+interface EmployeeCreatePayload {
+  first_name: string;
+  last_name: string;
+  email: string;
+  password: string;
+  role: string;
+  is_active: boolean;
 }
 
 export default function Employees() {
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [currentUser, setCurrentUser] = useState<Employee | null>(null);
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [formName, setFormName] = useState("");
+  const api = useAxios();
+  const queryClient = useQueryClient();
+  const authenticated = isAuthenticated();
+
+  const [formFirstName, setFormFirstName] = useState("");
+  const [formLastName, setFormLastName] = useState("");
   const [formEmail, setFormEmail] = useState("");
-  const [formRole, setFormRole] = useState("user");
+  const [formPassword, setFormPassword] = useState("");
+  const [formRole, setFormRole] = useState("employee");
   const [formActive, setFormActive] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    fetchEmployees();
-    loadCurrentUser();
-  }, []);
+  const currentUserQuery = useQuery({
+    queryKey: ["currentUser"],
+    queryFn: async () => {
+      const response = await api.get<EmployeeSummary>("/employees/me");
+      return response.data;
+    },
+    enabled: authenticated,
+  });
 
-  const fetchEmployees = () => {
-    setLoading(true);
-    setError(null);
+  const employeesQuery = useQuery({
+    queryKey: ["employees"],
+    queryFn: async () => {
+      const response = await api.get<EmployeeSummary[]>("/employees");
+      return response.data;
+    },
+    enabled: authenticated,
+  });
 
-    api
-      .get<Employee[]>("/employees")
-      .then((response) => {
-        setEmployees(response.data);
-      })
-      .catch(() => {
-        setError("Unable to load employees.");
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  };
+  const createEmployee = useMutation({
+    mutationFn: async (payload: EmployeeCreatePayload) => {
+      const response = await api.post<EmployeeSummary>("/employees", payload);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries(["employees"]);
+      setFormSuccess("Employee created successfully.");
+      setFormError(null);
+      setFormFirstName("");
+      setFormLastName("");
+      setFormEmail("");
+      setFormPassword("");
+      setFormRole("employee");
+      setFormActive(true);
+    },
+    onError: (error: any) => {
+      setFormError(error?.response?.data?.detail || "Unable to create employee.");
+    },
+  });
 
-  const loadCurrentUser = async (email?: string) => {
-    if (typeof window !== "undefined" && email) {
-      window.localStorage.setItem("fleet_user_email", email);
-    }
-
-    try {
-      const response = await api.get<Employee>("/employees/me");
-      setCurrentUser(response.data);
-      setLoginError(null);
-    } catch {
-      setCurrentUser(null);
-      if (email) {
-        setLoginError("Login failed. Please use a registered user email.");
-      }
-    }
-  };
-
-  const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setLoginError(null);
-    await loadCurrentUser(loginEmail);
-  };
-
-  const handleLogout = () => {
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem("fleet_user_email");
-    }
-    setCurrentUser(null);
-    setLoginEmail("");
-    setLoginError(null);
-  };
-
-  const hasAdmin = employees.some((employee) => employee.role === "admin");
-  const canCreate = !hasAdmin || currentUser?.role === "admin";
+  const canCreate = currentUserQuery.data?.role === "admin" || !currentUserQuery.data;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
     setFormError(null);
     setFormSuccess(null);
-    setSaving(true);
-
-    try {
-      const payload = {
-        name: formName,
-        email: formEmail,
-        role: formRole,
-        active: formActive,
-      };
-
-      const response = await api.post<Employee>("/employees", payload);
-      setEmployees((prev) => [...prev, response.data]);
-      setFormSuccess("Employee created successfully.");
-      setFormName("");
-      setFormEmail("");
-      setFormRole("user");
-      setFormActive(true);
-    } catch (e: any) {
-      setFormError(e?.response?.data?.detail || "Unable to create employee.");
-    } finally {
-      setSaving(false);
-    }
+    await createEmployee.mutateAsync({
+      first_name: formFirstName,
+      last_name: formLastName,
+      email: formEmail,
+      password: formPassword,
+      role: formRole,
+      is_active: formActive,
+    });
   };
 
   const headers = ["ID", "Name", "Email", "Role", "Active"];
-  const rows = employees.map((employee) => [
+  const rows = employeesQuery.data?.map((employee) => [
     String(employee.id),
-    employee.name,
+    `${employee.first_name} ${employee.last_name}`,
     employee.email,
     employee.role,
-    employee.active ? "Yes" : "No",
-  ]);
+    employee.is_active ? "Yes" : "No",
+  ]) ?? [];
+
+  if (!authenticated) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Employees</h1>
+          <p className="text-slate-500 mt-2">Login to manage your employee roster and roles.</p>
+        </div>
+        <div className="rounded-3xl border bg-white p-6 shadow-sm">
+          <p className="text-slate-700">You need to sign in before viewing employees.</p>
+          <Link href="/login" className="mt-4 inline-flex rounded-lg bg-slate-900 px-4 py-2 text-white hover:bg-slate-800">
+            Go to login
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -130,53 +130,30 @@ export default function Employees() {
 
       <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
         <div className="bg-white rounded-2xl p-6 border shadow-sm">
-          <h2 className="text-xl font-semibold mb-4">Current User</h2>
-          {currentUser ? (
+          <h2 className="text-xl font-semibold mb-4">Current user</h2>
+          {currentUserQuery.isLoading ? (
+            <p>Loading current user...</p>
+          ) : currentUserQuery.error ? (
+            <p className="text-red-600">Unable to load current user.</p>
+          ) : currentUserQuery.data ? (
             <div className="space-y-3">
               <p>
-                <strong>Email:</strong> {currentUser.email}
+                <strong>Email:</strong> {currentUserQuery.data.email}
               </p>
               <p>
-                <strong>Role:</strong> {currentUser.role}
+                <strong>Role:</strong> {currentUserQuery.data.role}
               </p>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="rounded-lg bg-slate-800 px-4 py-2 text-white hover:bg-slate-900"
-              >
-                Logout
-              </button>
             </div>
           ) : (
-            <form onSubmit={handleLogin} className="space-y-4">
-              <p className="text-slate-600">Login by email to act as that user.</p>
-              {loginError && <p className="text-red-600">{loginError}</p>}
-              <label className="block">
-                <span className="text-sm font-medium text-slate-700">Email</span>
-                <input
-                  type="email"
-                  value={loginEmail}
-                  onChange={(event) => setLoginEmail(event.target.value)}
-                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm"
-                  placeholder="admin@example.com"
-                  required
-                />
-              </label>
-              <button
-                type="submit"
-                className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700"
-              >
-                Login
-              </button>
-            </form>
+            <p className="text-slate-600">No current user information available.</p>
           )}
         </div>
 
         <div className="bg-white rounded-2xl p-6 border shadow-sm">
-          <h2 className="text-xl font-semibold mb-4">Add Employee / Driver / Admin</h2>
-          {!canCreate && (
+          <h2 className="text-xl font-semibold mb-4">Add employee</h2>
+          {currentUserQuery.data?.role !== "admin" && (
             <p className="text-red-600 mb-4">
-              Only admins can create new users once an admin exists. Log in as an admin or create the first admin account.
+              Only admins may add new employees. Sign in with an admin account to continue.
             </p>
           )}
           {formError && <p className="text-red-600 mb-4">{formError}</p>}
@@ -184,29 +161,52 @@ export default function Employees() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <label className="block">
-                <span className="text-sm font-medium text-slate-700">Name</span>
+                <span className="text-sm font-medium text-slate-700">First name</span>
                 <input
-                  value={formName}
-                  onChange={(event) => setFormName(event.target.value)}
+                  type="text"
+                  value={formFirstName}
+                  onChange={(event) => setFormFirstName(event.target.value)}
                   className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm"
-                  placeholder="Jane Doe"
                   required
-                  disabled={!canCreate}
+                  disabled={currentUserQuery.data?.role !== "admin"}
                 />
               </label>
               <label className="block">
-                <span className="text-sm font-medium text-slate-700">Email</span>
+                <span className="text-sm font-medium text-slate-700">Last name</span>
                 <input
-                  type="email"
-                  value={formEmail}
-                  onChange={(event) => setFormEmail(event.target.value)}
+                  type="text"
+                  value={formLastName}
+                  onChange={(event) => setFormLastName(event.target.value)}
                   className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm"
-                  placeholder="jane.doe@example.com"
                   required
-                  disabled={!canCreate}
+                  disabled={currentUserQuery.data?.role !== "admin"}
                 />
               </label>
             </div>
+
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Email</span>
+              <input
+                type="email"
+                value={formEmail}
+                onChange={(event) => setFormEmail(event.target.value)}
+                className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm"
+                required
+                disabled={currentUserQuery.data?.role !== "admin"}
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Password</span>
+              <input
+                type="password"
+                value={formPassword}
+                onChange={(event) => setFormPassword(event.target.value)}
+                className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm"
+                required
+                disabled={currentUserQuery.data?.role !== "admin"}
+              />
+            </label>
 
             <div className="grid gap-4 md:grid-cols-2">
               <label className="block">
@@ -215,10 +215,10 @@ export default function Employees() {
                   value={formRole}
                   onChange={(event) => setFormRole(event.target.value)}
                   className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm"
-                  disabled={!canCreate}
+                  disabled={currentUserQuery.data?.role !== "admin"}
                 >
-                  <option value="user">User</option>
-                  <option value="driver">Driver</option>
+                  <option value="employee">Employee</option>
+                  <option value="fleet_manager">Fleet Manager</option>
                   <option value="admin">Admin</option>
                 </select>
               </label>
@@ -228,7 +228,7 @@ export default function Employees() {
                   checked={formActive}
                   onChange={(event) => setFormActive(event.target.checked)}
                   className="h-4 w-4 rounded border-gray-300 text-indigo-600"
-                  disabled={!canCreate}
+                  disabled={currentUserQuery.data?.role !== "admin"}
                 />
                 <span className="text-sm text-slate-700">Active</span>
               </label>
@@ -236,19 +236,19 @@ export default function Employees() {
 
             <button
               type="submit"
-              disabled={saving || !canCreate}
+              disabled={createEmployee.isLoading || currentUserQuery.data?.role !== "admin"}
               className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {saving ? "Saving..." : "Add Employee"}
+              {createEmployee.isLoading ? "Saving..." : "Add employee"}
             </button>
           </form>
         </div>
       </div>
 
-      {loading ? (
+      {employeesQuery.isLoading ? (
         <p>Loading employees...</p>
-      ) : error ? (
-        <p className="text-red-600">{error}</p>
+      ) : employeesQuery.isError ? (
+        <p className="text-red-600">Unable to load employees.</p>
       ) : (
         <div className="bg-white rounded-2xl p-6 border shadow-sm">
           <DataTable headers={headers} rows={rows} />

@@ -1,102 +1,131 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import api from "@/lib/api";
+import { isAuthenticated } from "@/lib/auth";
 
-interface Vehicle {
+interface VehicleSummary {
   id: number;
-  make: string;
+  brand: string;
   model: string;
   year: number;
   license_plate: string;
   status: string;
-  assigned_to: string | null;
+  assigned_employee_id: number | null;
 }
 
-interface Employee {
+interface EmployeeSummary {
   id: number;
-  name: string;
+  first_name: string;
+  last_name: string;
   email: string;
   role: string;
-  active: boolean;
+  is_active: boolean;
 }
 
 export default function Dashboard() {
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const authenticated = isAuthenticated();
 
-  useEffect(() => {
-    fetchDashboardMetrics();
-  }, []);
-
-  const fetchDashboardMetrics = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const [vehiclesResponse, employeesResponse] = await Promise.all([
-        api.get<Vehicle[]>("/vehicles"),
-        api.get<Employee[]>("/employees"),
-      ]);
-
-      setVehicles(vehiclesResponse.data);
-      setEmployees(employeesResponse.data);
-    } catch {
-      setError("Unable to load dashboard metrics.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const cards = [
-    {
-      title: "Total Vehicles",
-      value: String(vehicles.length),
+  const vehiclesQuery = useQuery({
+    queryKey: ["vehicles"],
+    queryFn: async () => {
+      const response = await api.get<VehicleSummary[]>("/vehicles");
+      return response.data;
     },
-    {
-      title: "Active Employees",
-      value: String(employees.filter((employee) => employee.active).length),
+    enabled: authenticated,
+  });
+
+  const employeesQuery = useQuery({
+    queryKey: ["employees"],
+    queryFn: async () => {
+      const response = await api.get<EmployeeSummary[]>("/employees");
+      return response.data;
     },
-    {
-      title: "Driver Count",
-      value: String(employees.filter((employee) => employee.role === "driver").length),
-    },
-    {
-      title: "Assigned Vehicles",
-      value: String(vehicles.filter((vehicle) => Boolean(vehicle.assigned_to)).length),
-    },
-  ];
+    enabled: authenticated,
+  });
+
+  const vehicles = vehiclesQuery.data ?? [];
+  const employees = employeesQuery.data ?? [];
+  const loading = !authenticated || vehiclesQuery.isLoading || employeesQuery.isLoading;
+  const error = (!authenticated && !vehiclesQuery.data) || vehiclesQuery.isError || employeesQuery.isError;
+
+  const cards = useMemo(
+    () => [
+      { title: "Total vehicles", value: String(vehicles.length) },
+      { title: "Available vehicles", value: String(vehicles.filter((vehicle) => vehicle.status === "available").length) },
+      { title: "Vehicles in maintenance", value: String(vehicles.filter((vehicle) => vehicle.status === "maintenance").length) },
+      { title: "Total employees", value: String(employees.length) },
+    ],
+    [vehicles, employees],
+  );
+
+  if (!authenticated) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Fleet Dashboard</h1>
+          <p className="text-slate-500">Sign in to view your company fleet analytics.</p>
+        </div>
+        <div className="rounded-3xl border bg-white p-6 shadow-sm">
+          <p className="text-slate-700">You need to login to fetch dashboard metrics.</p>
+          <Link href="/login" className="mt-4 inline-flex rounded-lg bg-slate-900 px-4 py-2 text-white hover:bg-slate-800">
+            Go to login
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold">Fleet Overview</h1>
-        <p className="text-slate-500">Track vehicles, employees and usage statistics.</p>
+        <h1 className="text-3xl font-bold">Fleet Dashboard</h1>
+        <p className="text-slate-500">Company fleet performance and summary metrics.</p>
       </div>
 
       {loading ? (
         <p>Loading dashboard metrics...</p>
       ) : error ? (
-        <p className="text-red-600">{error}</p>
+        <p className="text-red-600">Unable to load dashboard data.</p>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+        <div className="grid gap-6 xl:grid-cols-4">
           {cards.map((card) => (
-            <div
-              key={card.title}
-              className="bg-white rounded-2xl p-6 shadow-sm border hover:shadow-md transition"
-            >
+            <div key={card.title} className="rounded-3xl border bg-white p-6 shadow-sm">
               <p className="text-sm text-slate-500">{card.title}</p>
-              <p className="text-3xl font-bold mt-3">{card.value}</p>
+              <p className="mt-4 text-3xl font-semibold text-slate-900">{card.value}</p>
             </div>
           ))}
         </div>
       )}
 
-      <div className="bg-white rounded-2xl p-6 border shadow-sm">
-        <h2 className="font-semibold text-lg">Recent Activity</h2>
-        <p className="text-slate-500 mt-3">No activity recorded yet.</p>
+      <div className="grid gap-6 xl:grid-cols-2">
+        <section className="rounded-3xl border bg-white p-6 shadow-sm">
+          <h2 className="text-xl font-semibold">Vehicle status overview</h2>
+          <p className="mt-2 text-slate-600">Live fleet availability and maintenance status.</p>
+          <div className="mt-6 grid gap-4">
+            {vehicles.slice(0, 5).map((vehicle) => (
+              <div key={vehicle.id} className="rounded-2xl border p-4">
+                <h3 className="font-semibold">{vehicle.brand} {vehicle.model}</h3>
+                <p className="text-sm text-slate-500">{vehicle.license_plate} • {vehicle.status}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border bg-white p-6 shadow-sm">
+          <h2 className="text-xl font-semibold">Employee summary</h2>
+          <p className="mt-2 text-slate-600">Key staff currently managing fleet assignments.</p>
+          <div className="mt-6 grid gap-4">
+            {employees.slice(0, 5).map((employee) => (
+              <div key={employee.id} className="rounded-2xl border p-4">
+                <h3 className="font-semibold">{employee.first_name} {employee.last_name}</h3>
+                <p className="text-sm text-slate-500">{employee.email} • {employee.role}</p>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   );
